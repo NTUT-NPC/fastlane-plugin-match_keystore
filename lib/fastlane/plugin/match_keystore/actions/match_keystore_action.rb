@@ -109,7 +109,7 @@ module Fastlane
             raise "Minimum version for LibreSSL is '#{libressl_min}', please update it. Use homebrew is your are Mac user, and update ~/.bah_profile or ~/.zprofile"
           end
         else
-          if Gem::Version.new(vesion) > Gem::Version.new(openssl_min)
+          if Gem::Version.new(vesion) < Gem::Version.new(openssl_min)
             raise "Minimum version for OpenSSL is '#{openssl_min}' please update it. Use homebrew is your are Mac user, and update ~/.bah_profile or ~/.zprofile"
           end
         end
