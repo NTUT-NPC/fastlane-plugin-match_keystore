@@ -158,20 +158,20 @@ module Fastlane
         if compat_key == "1"
           shaValue = Digest::SHA512.hexdigest("#{password}\n")
         end
-        File.write(key_path, shaValue + "\n")
+        File.binwrite(key_path, shaValue + "\n")
       end
 
       def self.encrypt_file(clear_file, encrypt_file, key_path, forceOpenSSL)
         FileUtils.rm_f(encrypt_file)
         openssl_bin = self.openssl(forceOpenSSL)
-        run_command(openssl_bin, "enc", "-aes-256-cbc", "-salt", "-pbkdf2",
+        run_command(openssl_bin, "enc", "-aes-256-cbc", "-salt", "-pbkdf2", "-md", "sha256",
                     "-in", clear_file, "-out", encrypt_file, "-pass", "file:#{key_path}")
       end
 
       def self.decrypt_file(encrypt_file, clear_file, key_path, forceOpenSSL)
         FileUtils.rm_f(clear_file)
         openssl_bin = self.openssl(forceOpenSSL)
-        output, status = Open3.capture2e(openssl_bin, "enc", "-d", "-aes-256-cbc", "-pbkdf2",
+        output, status = Open3.capture2e(openssl_bin, "enc", "-d", "-aes-256-cbc", "-pbkdf2", "-md", "sha256",
                                          "-in", encrypt_file, "-out", clear_file, "-pass", "file:#{key_path}")
         unless status.success?
           raise "Decryption failed (exit #{status.exitstatus}): #{output.strip}. " \
@@ -547,6 +547,12 @@ module Fastlane
         else
           UI.message("Pulling remote Keystores repository...")
           run_command("git", "-C", repo_dir, "pull")
+        end
+
+        # Ensure .gitattributes marks binary files to prevent autocrlf corruption:
+        gitattributes_path = File.join(repo_dir, '.gitattributes')
+        if !File.file?(gitattributes_path)
+          File.binwrite(gitattributes_path, "*.enc binary\n*.jks binary\n")
         end
 
         # Load parameters from JSON for CI or Unit Tests:
