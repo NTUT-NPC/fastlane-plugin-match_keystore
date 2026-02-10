@@ -2,7 +2,7 @@ require 'fastlane/action'
 require 'fileutils'
 require 'os'
 require 'json'
-require 'pry'
+require 'openssl'
 require 'digest'
 require 'open3'
 require_relative '../helper/match_keystore_helper'
@@ -19,7 +19,10 @@ module Fastlane
     class MatchKeystoreAction < Action
 
       KEY_VERSION = "2"
-      OPENSSL_BIN_PATH_MAC = "/usr/local/opt/openssl@1.1/bin"
+      CIPHER_ALGO = 'aes-256-cbc'
+      PBKDF2_ITER = 10_000
+      PBKDF2_DIGEST = 'sha256'
+      SALT_HEADER = "Salted__"
 
       def self.run_command(*args)
         output, status = Open3.capture2e(*args)
@@ -102,54 +105,6 @@ module Fastlane
         build_tools_path
       end
 
-      def self.check_ssl_version(forceOpenSSL)
-        libressl_min = '2.9'
-        openssl_min = '1.1.1'
-
-        openssl = self.openssl(forceOpenSSL)
-        output = run_command(openssl, "version")
-        if !output.start_with?("LibreSSL") && !output.start_with?("OpenSSL")
-          raise "Please install OpenSSL '#{openssl_min}' at least OR LibreSSL #{libressl_min}' at least"
-        end
-        UI.message("SSL/TLS protocol library: '#{output.strip!}'")
-
-        # Check minimum verion:
-        vesion = output.to_str.scan(/[0-9\.]{1,}/).first
-        UI.message("SSL/TLS protocol version: '#{vesion}'")
-        if self.is_libre_ssl(forceOpenSSL)
-          if Gem::Version.new(vesion) < Gem::Version.new(libressl_min)
-            raise "Minimum version for LibreSSL is '#{libressl_min}', please update it. Use homebrew is your are Mac user, and update ~/.bah_profile or ~/.zprofile"
-          end
-        else
-          if Gem::Version.new(vesion) < Gem::Version.new(openssl_min)
-            raise "Minimum version for OpenSSL is '#{openssl_min}' please update it. Use homebrew is your are Mac user, and update ~/.bah_profile or ~/.zprofile"
-          end
-        end
-
-        output.strip
-      end
-
-      def self.openssl(forceOpenSSL)
-        if forceOpenSSL && !OS.windows?
-          output = "#{self::OPENSSL_BIN_PATH_MAC}/openssl"
-        else
-          if forceOpenSSL && OS.windows?
-            UI.important("forceOpenSSL is not supported on Windows, using openssl from PATH")
-          end
-          output = "openssl"
-        end
-        output
-      end
-
-      def self.is_libre_ssl(forceOpenSSL)
-        result = false
-        openssl = self.openssl(forceOpenSSL)
-        output = run_command(openssl, "version")
-        if output.start_with?("LibreSSL")
-          result = true
-        end
-        result
-      end
 
       def self.gen_key(key_path, password, compat_key)
         FileUtils.rm_f(key_path)
@@ -161,22 +116,53 @@ module Fastlane
         File.binwrite(key_path, shaValue + "\n")
       end
 
-      def self.encrypt_file(clear_file, encrypt_file, key_path, forceOpenSSL)
+      def self.encrypt_file(clear_file, encrypt_file, key_path)
         FileUtils.rm_f(encrypt_file)
-        openssl_bin = self.openssl(forceOpenSSL)
-        run_command(openssl_bin, "enc", "-aes-256-cbc", "-salt", "-pbkdf2", "-md", "sha256",
-                    "-in", clear_file, "-out", encrypt_file, "-pass", "file:#{key_path}")
+        password = File.binread(key_path).chomp("\n")
+        plaintext = File.binread(clear_file)
+
+        salt = OpenSSL::Random.random_bytes(8)
+        cipher = OpenSSL::Cipher.new(CIPHER_ALGO)
+        key_iv = OpenSSL::PKCS5.pbkdf2_hmac(
+          password, salt, PBKDF2_ITER,
+          cipher.key_len + cipher.iv_len, PBKDF2_DIGEST
+        )
+        cipher.encrypt
+        cipher.key = key_iv[0, cipher.key_len]
+        cipher.iv  = key_iv[cipher.key_len, cipher.iv_len]
+
+        ciphertext = cipher.update(plaintext) + cipher.final
+        File.binwrite(encrypt_file, SALT_HEADER + salt + ciphertext)
       end
 
-      def self.decrypt_file(encrypt_file, clear_file, key_path, forceOpenSSL)
+      def self.decrypt_file(encrypt_file, clear_file, key_path)
         FileUtils.rm_f(clear_file)
-        openssl_bin = self.openssl(forceOpenSSL)
-        output, status = Open3.capture2e(openssl_bin, "enc", "-d", "-aes-256-cbc", "-pbkdf2", "-md", "sha256",
-                                         "-in", encrypt_file, "-out", clear_file, "-pass", "file:#{key_path}")
-        unless status.success?
-          raise "Decryption failed (exit #{status.exitstatus}): #{output.strip}. " \
+        password = File.binread(key_path).chomp("\n")
+        data = File.binread(encrypt_file)
+
+        unless data[0, 8] == SALT_HEADER
+          raise "Decryption failed: missing salt header. " \
                 "Ensure your match_secret is correct and the encrypted file is not corrupted."
         end
+        salt = data[8, 8]
+        ciphertext = data[16..-1]
+
+        cipher = OpenSSL::Cipher.new(CIPHER_ALGO)
+        key_iv = OpenSSL::PKCS5.pbkdf2_hmac(
+          password, salt, PBKDF2_ITER,
+          cipher.key_len + cipher.iv_len, PBKDF2_DIGEST
+        )
+        cipher.decrypt
+        cipher.key = key_iv[0, cipher.key_len]
+        cipher.iv  = key_iv[cipher.key_len, cipher.iv_len]
+
+        begin
+          plaintext = cipher.update(ciphertext) + cipher.final
+        rescue OpenSSL::Cipher::CipherError
+          raise "Decryption failed. " \
+                "Ensure your match_secret is correct and the encrypted file is not corrupted."
+        end
+        File.binwrite(clear_file, plaintext)
       end
 
       def self.assert_equals(test_name, excepted, value)
@@ -191,8 +177,6 @@ module Fastlane
       end
 
       def self.test_security
-
-        self.check_ssl_version(false)
 
         # Clear temp files
         temp_dir = File.join(Dir.pwd, 'temp')
@@ -217,53 +201,18 @@ module Fastlane
         excepted = "cc6a7b0d89cc61c053f7018a305672bdb82bc07e5015f64bb063d9662be4ec81ec8afa819b009de266482b6bd56b7068def2524c32f5b5d4d9db49ee4578499d"
         self.assert_equals("SHA-512-File", excepted, shaValue)
 
-
-        # Check LibreSSL
-        result = self.is_libre_ssl(false)
-        self.assert_equals("Is-LibreSSL", true, result)
-        result = self.is_libre_ssl(true)
-        self.assert_equals("Is-LibreSSL", false, result)
-
-        # Encrypt OpenSSL
+        # Encrypt then decrypt round-trip
         clear_file = File.join(Dir.pwd, 'temp', 'clear.txt')
-        openssl_encrypt_file = File.join(Dir.pwd, 'temp', 'openssl_encrypted.txt')
+        encrypted_file = File.join(Dir.pwd, 'temp', 'encrypted.txt')
+        decrypted_file = File.join(Dir.pwd, 'temp', 'decrypted.txt')
         self.content_to_file(clear_file, fakeValue)
-        self.encrypt_file(clear_file, openssl_encrypt_file, key_path, true)
-        result = File.file?(openssl_encrypt_file) && File.size(openssl_encrypt_file) > 10
-        self.assert_equals("Encrypt-OpenSSL", true, result)
+        self.encrypt_file(clear_file, encrypted_file, key_path)
+        result = File.file?(encrypted_file) && File.size(encrypted_file) > 10
+        self.assert_equals("Encrypt", true, result)
 
-        # Encrypt LibreSSL
-        encrypt_file_libre = File.join(Dir.pwd, 'temp', 'libressl_encrypted.txt')
-        self.content_to_file(clear_file, fakeValue)
-        self.encrypt_file(clear_file, encrypt_file_libre, key_path, false)
-        result = File.file?(encrypt_file_libre) && File.size(encrypt_file_libre) > 10
-        self.assert_equals("Encrypt-LibreSSL", true, result)
-
-        # exit!
-
-        # Decrypt OpenSSL (from OpenSSL)
-        openssl_clear_file = File.join(Dir.pwd, 'temp', 'openssl_clear.txt')
-        self.decrypt_file(openssl_encrypt_file, openssl_clear_file, key_path, true)
-        decrypted = self.get_file_content(openssl_clear_file).strip!
-        self.assert_equals("Decrypt-OpenSSL", fakeValue, decrypted)
-
-        # Decrypt LibreSSL (from LibreSSL)
-        libressl_clear_file = File.join(Dir.pwd, 'temp', 'libressl_clear.txt')
-        self.decrypt_file(encrypt_file_libre, libressl_clear_file, key_path, false)
-        decrypted = self.get_file_content(libressl_clear_file).strip!
-        self.assert_equals("Decrypt-LibreSSL", fakeValue, decrypted)
-
-        # Decrypt LibreSSL (from OpenSSL)
-        libressl_clear_file = File.join(Dir.pwd, 'temp', 'libressl_from_openssl_clear.txt')
-        self.decrypt_file(openssl_encrypt_file, libressl_clear_file, key_path, false)
-        decrypted = self.get_file_content(libressl_clear_file).strip!
-        self.assert_equals("Decrypt-LibreSSL-from-OpenSSL", fakeValue, decrypted)
-
-        # Decrypt OpenSSL (from LibreSSL)
-        openssl_clear_file = File.join(Dir.pwd, 'temp', 'openssl_from_libressl_clear.txt')
-        self.decrypt_file(encrypt_file_libre, openssl_clear_file, key_path, true)
-        decrypted = self.get_file_content(openssl_clear_file).strip!
-        self.assert_equals("Decrypt-OpenSSL-from-LibreSSL", fakeValue, decrypted)
+        self.decrypt_file(encrypted_file, decrypted_file, key_path)
+        decrypted = self.get_file_content(decrypted_file).strip!
+        self.assert_equals("Decrypt-RoundTrip", fakeValue, decrypted)
 
       end
 
@@ -475,9 +424,6 @@ module Fastlane
           raise "The environment variable ANDROID_HOME is not defined, or Android SDK is not installed!"
         end
 
-        # Check OpenSSL:
-        self.check_ssl_version(false)
-
         # Check is backward-compatibility is required:
         if !compat_key.to_s.strip.empty?
           UI.message("Compatiblity version: #{compat_key}")
@@ -634,7 +580,7 @@ module Fastlane
           out_file.puts("aliasPassword=#{alias_password}")
           out_file.close
 
-          self.encrypt_file(properties_path, properties_encrypt_path, key_path, false)
+          self.encrypt_file(properties_path, properties_encrypt_path, key_path)
           File.delete(properties_path)
 
           # Print Keystore data in repo:
@@ -654,10 +600,9 @@ module Fastlane
         else
           UI.message "Keystore file already exists, continue..."
 
-          self.decrypt_file(properties_encrypt_path, properties_path, key_path, false)
+          self.decrypt_file(properties_encrypt_path, properties_path, key_path)
 
           properties = self.load_properties(properties_path)
-          # Pry::ColorPrinter.pp(properties)
           key_password = properties['keyPassword']
           alias_name = properties['aliasName']
           alias_password = properties['aliasPassword']
