@@ -12,6 +12,8 @@ module Fastlane
     module SharedValues
       MATCH_KEYSTORE_PATH = :MATCH_KEYSTORE_PATH
       MATCH_KEYSTORE_ALIAS_NAME = :MATCH_KEYSTORE_ALIAS_NAME
+      MATCH_KEYSTORE_PASSWORD = :MATCH_KEYSTORE_PASSWORD
+      MATCH_KEYSTORE_ALIAS_PASSWORD = :MATCH_KEYSTORE_ALIAS_PASSWORD
       MATCH_KEYSTORE_APK_SIGNED = :MATCH_KEYSTORE_APK_SIGNED
       MATCH_KEYSTORE_AAB_SIGNED = :MATCH_KEYSTORE_AAB_SIGNED
     end
@@ -425,6 +427,7 @@ module Fastlane
         build_tools_version = params[:build_tools_version]
         zip_align = params[:zip_align]
         compat_key = params[:compat_key]
+        skip_signing = params[:skip_signing]
         @git_basic_authorization = params[:git_basic_authorization]
         @git_bearer_authorization = params[:git_bearer_authorization]
         @git_private_key = params[:git_private_key]
@@ -626,6 +629,21 @@ module Fastlane
           File.delete(properties_path)
         end
 
+        # Export credentials for Gradle/Flutter builds:
+        ENV['MATCH_KEYSTORE_PATH'] = keystore_path
+        ENV['MATCH_KEYSTORE_ALIAS_NAME'] = alias_name
+        ENV['MATCH_KEYSTORE_PASSWORD'] = key_password
+        ENV['MATCH_KEYSTORE_ALIAS_PASSWORD'] = alias_password
+        Actions.lane_context[SharedValues::MATCH_KEYSTORE_PATH] = keystore_path
+        Actions.lane_context[SharedValues::MATCH_KEYSTORE_ALIAS_NAME] = alias_name
+        Actions.lane_context[SharedValues::MATCH_KEYSTORE_PASSWORD] = key_password
+        Actions.lane_context[SharedValues::MATCH_KEYSTORE_ALIAS_PASSWORD] = alias_password
+
+        if skip_signing
+          UI.message("Signing skipped, keystore is configured.")
+          return keystore_path
+        end
+
         # Sign APK:
         if apk_path && File.file?(apk_path)
           UI.message("APK to sign: " + apk_path)
@@ -650,9 +668,6 @@ module Fastlane
             puts ''
           end
 
-          # Prepare contect shared values for next lanes:
-          Actions.lane_context[SharedValues::MATCH_KEYSTORE_PATH] = keystore_path
-          Actions.lane_context[SharedValues::MATCH_KEYSTORE_ALIAS_NAME] = alias_name
           Actions.lane_context[SharedValues::MATCH_KEYSTORE_APK_SIGNED] = output_signed_apk
 
           output_signed_apk
@@ -678,9 +693,6 @@ module Fastlane
             puts ''
           end
 
-          # Prepare contect shared values for next lanes:
-          Actions.lane_context[SharedValues::MATCH_KEYSTORE_PATH] = keystore_path
-          Actions.lane_context[SharedValues::MATCH_KEYSTORE_ALIAS_NAME] = alias_name
           Actions.lane_context[SharedValues::MATCH_KEYSTORE_AAB_SIGNED] = output_signed_aab
 
           output_signed_aab
@@ -705,6 +717,8 @@ module Fastlane
         [
           ['MATCH_KEYSTORE_PATH', 'File path of the Keystore fot the App.'],
           ['MATCH_KEYSTORE_ALIAS_NAME', 'Keystore Alias Name.'],
+          ['MATCH_KEYSTORE_PASSWORD', 'Keystore Password.'],
+          ['MATCH_KEYSTORE_ALIAS_PASSWORD', 'Keystore Alias Password.'],
           ['MATCH_KEYSTORE_APK_SIGNED', 'Path of the signed APK.'],
           ['MATCH_KEYSTORE_AAB_SIGNED', 'Path of the signed AAB.']
         ]
@@ -804,7 +818,13 @@ module Fastlane
                                    env_name: "MATCH_KEYSTORE_UNIT_TESTS",
                                 description: "launch Unit Tests (false by default)",
                                    optional: true,
-                                       type: Boolean)
+                                       type: Boolean),
+          FastlaneCore::ConfigItem.new(key: :skip_signing,
+                                   env_name: "MATCH_KEYSTORE_SKIP_SIGNING",
+                                description: "Skip signing the APK or AAB (false by default)",
+                                   optional: true,
+                                       type: Boolean,
+                              default_value: false)
         ]
       end
 
