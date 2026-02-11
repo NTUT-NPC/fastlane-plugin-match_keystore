@@ -32,6 +32,25 @@ module Fastlane
         output
       end
 
+      def self.git_command(*args)
+        if @git_basic_authorization
+          auth_args = ["-c", "http.extraHeader=Authorization: Basic #{@git_basic_authorization}"]
+          run_command("git", *auth_args, *args)
+        elsif @git_bearer_authorization
+          auth_args = ["-c", "http.extraHeader=Authorization: Bearer #{@git_bearer_authorization}"]
+          run_command("git", *auth_args, *args)
+        elsif @git_private_key
+          env = { "GIT_SSH_COMMAND" => "ssh -o StrictHostKeyChecking=no -i #{@git_private_key}" }
+          output, status = Open3.capture2e(env, "git", *args)
+          unless status.success?
+            UI.important("Command failed (exit #{status.exitstatus}): git #{args.join(' ')}")
+          end
+          output
+        else
+          run_command("git", *args)
+        end
+      end
+
       def self.tool_executable(build_tools_path, tool_name)
         if OS.windows?
           File.join(build_tools_path, "#{tool_name}.bat")
@@ -404,6 +423,9 @@ module Fastlane
         build_tools_version = params[:build_tools_version]
         zip_align = params[:zip_align]
         compat_key = params[:compat_key]
+        @git_basic_authorization = params[:git_basic_authorization]
+        @git_bearer_authorization = params[:git_bearer_authorization]
+        @git_private_key = params[:git_private_key]
 
         # Test OpenSSL/LibreSSL
         if unit_test
@@ -489,10 +511,10 @@ module Fastlane
         gitDir = File.join(repo_dir, '.git')
         if !File.directory?(gitDir)
           UI.message("Cloning remote Keystores repository...")
-          run_command("git", "clone", git_url, repo_dir)
+          git_command("clone", git_url, repo_dir)
         else
           UI.message("Pulling remote Keystores repository...")
-          run_command("git", "-C", repo_dir, "pull")
+          git_command("-C", repo_dir, "pull")
         end
 
         # Ensure .gitattributes marks binary files to prevent autocrlf corruption:
@@ -594,7 +616,7 @@ module Fastlane
           puts ''
           run_command("git", "-C", repo_dir, "add", ".")
           run_command("git", "-C", repo_dir, "commit", "-m", "[ADD] Keystore for app '#{package_name}'.")
-          run_command("git", "-C", repo_dir, "push")
+          git_command("-C", repo_dir, "push")
           puts ''
 
         else
@@ -702,15 +724,38 @@ module Fastlane
       def self.available_options
         [
           FastlaneCore::ConfigItem.new(key: :git_url,
-                                   env_name: "MATCH_KEYSTORE_GIT_URL",
+                                   env_name: "MATCH_GIT_URL",
                                 description: "The URL of the Git repository (Github, BitBucket...)",
                                    optional: false,
                                        type: String),
+          FastlaneCore::ConfigItem.new(key: :git_basic_authorization,
+                                   env_name: "MATCH_GIT_BASIC_AUTHORIZATION",
+                                description: "Use a basic authorization header to access the git repo (e.g.: access tokens), usually encoded as Base64",
+                                   sensitive: true,
+                                   optional: true,
+                                       type: String,
+                         conflicting_options: [:git_bearer_authorization, :git_private_key]),
+          FastlaneCore::ConfigItem.new(key: :git_bearer_authorization,
+                                   env_name: "MATCH_GIT_BEARER_AUTHORIZATION",
+                                description: "Use a bearer authorization header to access the git repo (e.g.: GitHub PAT)",
+                                   sensitive: true,
+                                   optional: true,
+                                       type: String,
+                         conflicting_options: [:git_basic_authorization, :git_private_key]),
+          FastlaneCore::ConfigItem.new(key: :git_private_key,
+                                   env_name: "MATCH_GIT_PRIVATE_KEY",
+                                description: "Path to a private SSH key to use for git operations",
+                                   sensitive: true,
+                                   optional: true,
+                                       type: String,
+                         conflicting_options: [:git_basic_authorization, :git_bearer_authorization]),
           FastlaneCore::ConfigItem.new(key: :package_name,
-                                   env_name: "MATCH_KEYSTORE_PACKAGE_NAME",
+                                   env_name: "SUPPLY_PACKAGE_NAME",
                                 description: "The package name of the App",
                                    optional: false,
-                                       type: String),
+                                       type: String,
+                              default_value: CredentialsManager::AppfileConfig.try_fetch_value(:package_name),
+                        default_value_dynamic: true),
           FastlaneCore::ConfigItem.new(key: :apk_path,
                                    env_name: "MATCH_KEYSTORE_APK_PATH",
                                 description: "Path of the APK file to sign",
@@ -722,7 +767,7 @@ module Fastlane
                                    optional: true,
                                        type: String),
           FastlaneCore::ConfigItem.new(key: :match_secret,
-                                   env_name: "MATCH_KEYSTORE_SECRET",
+                                   env_name: "MATCH_PASSWORD",
                                 description: "Secret to decrypt keystore.properties file (CI)",
                                    optional: true,
                                        type: String),
