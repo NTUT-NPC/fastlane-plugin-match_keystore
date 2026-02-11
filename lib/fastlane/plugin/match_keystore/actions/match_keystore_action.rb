@@ -241,7 +241,8 @@ module Fastlane
         UI.message("Build-tools path: #{build_tools_path}")
 
         # https://developer.android.com/studio/command-line/apksigner
-        apk_path_signed = apk_path.gsub(".apk", "-signed.apk")
+        apk_path_signed = apk_path.gsub("-signed.apk", ".apk")
+        apk_path_signed = apk_path_signed.gsub(".apk", "-signed.apk")
         apk_path_signed = apk_path_signed.gsub("unsigned", "")
         apk_path_signed = apk_path_signed.gsub("--", "-")
         FileUtils.rm_f(apk_path_signed)
@@ -299,7 +300,8 @@ module Fastlane
 
       def self.sign_aab(aab_path, keystore_path, key_password, alias_name, alias_password)
 
-        aab_path_signed = aab_path.gsub('.aab', '-signed.aab')
+        aab_path_signed = aab_path.gsub('-signed.aab', '.aab')
+        aab_path_signed = aab_path_signed.gsub('.aab', '-signed.aab')
         aab_path_signed = aab_path_signed.gsub('unsigned', '')
         aab_path_signed = aab_path_signed.gsub('--', '-')
         FileUtils.rm_f(aab_path_signed)
