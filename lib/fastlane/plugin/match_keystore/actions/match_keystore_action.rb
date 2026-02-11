@@ -436,7 +436,6 @@ module Fastlane
         # Init constants:
         keystore_name = 'keystore.jks'
         properties_name = 'keystore.properties'
-        keystore_info_name = 'keystore.txt'
         properties_encrypt_name = 'keystore.properties.enc'
 
         # Check Android Home env:
@@ -502,7 +501,7 @@ module Fastlane
         end
 
         # Define paths:
-        keystoreAppDir = File.join(repo_dir, package_name)
+        keystoreAppDir = File.join(repo_dir, "keystores")
         keystore_path = File.join(keystoreAppDir, keystore_name)
         properties_path = File.join(keystoreAppDir, properties_name)
         properties_encrypt_path = File.join(keystoreAppDir, properties_encrypt_name)
@@ -593,7 +592,7 @@ module Fastlane
           end
 
           # Build URL:
-          store_file = git_url + '/' + package_name + '/' + keystore_name
+          store_file = git_url + '/keystores/' + keystore_name
 
           out_file = File.new(properties_path, "w")
           out_file.puts("keyFile=#{store_file}")
@@ -605,17 +604,10 @@ module Fastlane
           self.encrypt_file(properties_path, properties_encrypt_path, key_path)
           File.delete(properties_path)
 
-          # Print Keystore data in repo:
-          keystore_info_path = File.join(keystoreAppDir, keystore_info_name)
-          output = run_command("keytool", "-list", "-v",
-                               "-keystore", keystore_path,
-                               "-storepass", key_password)
-          File.write(keystore_info_path, output)
-
           UI.message("Upload new Keystore to remote repository...")
           puts ''
-          run_command("git", "-C", repo_dir, "add", ".")
-          run_command("git", "-C", repo_dir, "commit", "-m", "[ADD] Keystore for app '#{package_name}'.")
+          run_command("git", "-C", repo_dir, "add", ".gitattributes", "keystores")
+          run_command("git", "-C", repo_dir, "commit", "-m", "[fastlane] Updated keystore for #{package_name}")
           git_command("-C", repo_dir, "push")
           puts ''
 
