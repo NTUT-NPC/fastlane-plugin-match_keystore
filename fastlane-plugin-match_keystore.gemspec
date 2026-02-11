@@ -7,11 +7,11 @@ require 'fastlane/plugin/match_keystore/version'
 Gem::Specification.new do |spec|
   spec.name          = 'fastlane-plugin-match_keystore'
   spec.version       = Fastlane::MatchKeystore::VERSION
-  spec.author        = 'Christopher NEY'
-  spec.email         = 'christopher.ney@gmail.com'
+  spec.authors       = ['Christopher NEY', 'Riley Ho']
+  spec.email         = ['christopher.ney@gmail.com', 'riley@rileychh.dev']
 
   spec.summary       = 'Easily sync your Android keystores across your team'
-  spec.homepage      = "https://github.com/christopherney/fastlane-plugin-match_keystore"
+  spec.homepage      = "https://github.com/NTUT-NPC/fastlane-plugin-match_keystore"
   spec.license       = "MIT"
 
   spec.files         = Dir["lib/**/*"] + %w(README.md LICENSE)

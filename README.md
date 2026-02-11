@@ -2,19 +2,26 @@
 
 [![fastlane Plugin Badge](https://rawcdn.githack.com/fastlane/fastlane/master/fastlane/assets/plugin-badge.svg)](https://rubygems.org/gems/fastlane-plugin-match_keystore)
 
+> **Note:** This is a fork of [christopherney/fastlane-plugin-match_keystore](https://github.com/christopherney/fastlane-plugin-match_keystore) with the following improvements:
+> - Fixed OpenSSL version comparison logic
+> - Ensured keystore directory exists before creation
+> - Replaced Unix shell commands with cross-platform Ruby equivalents
+> - Improved decryption error handling and non-UTF-8 byte support
+> - Migrated from OpenSSL CLI to Ruby OpenSSL gem for encryption/decryption
+
 ## Machine requirements
 
-* OpenSSL 1.1.1 min OR LibreSSL 2.9 min installed
 * Git installed
 * Android SDK & Build-tools installed
 * ANDROID_HOME environment variable defined
 
 ## Getting Started
 
-This project is a [_fastlane_](https://github.com/fastlane/fastlane) plugin. To get started with `fastlane-plugin-match_keystore`, add it to your project by running:
+This project is a [_fastlane_](https://github.com/fastlane/fastlane) plugin. To get started with this fork, add it to your `Pluginfile`:
 
-```bash
-fastlane add_plugin match_keystore
+```ruby
+gem 'fastlane-plugin-match_keystore',
+  git: 'https://github.com/NTUT-NPC/fastlane-plugin-match_keystore'
 ```
 
 ## About match_keystore
