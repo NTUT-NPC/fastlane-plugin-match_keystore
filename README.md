@@ -1,8 +1,10 @@
 # match_keystore plugin
 
+> **Deprecated:** This plugin has been replaced by a cross-platform Dart CLI (`tool/credentials.dart`) in [NTUT-NPC/tattoo#79](https://github.com/NTUT-NPC/tattoo/pull/79). The Dart tool fetches and decrypts signing credentials (keystore, key.properties, google-services.json, service-account.json) from a shared Git repo using AES-256-CBC with PBKDF2, and integrates with the standard Flutter/Gradle file-based `key.properties` signing pattern instead of environment variables. This repository is no longer actively maintained.
+
 [![fastlane Plugin Badge](https://rawcdn.githack.com/fastlane/fastlane/master/fastlane/assets/plugin-badge.svg)](https://rubygems.org/gems/fastlane-plugin-match_keystore)
 
-> **Note:** This is a fork of [christopherney/fastlane-plugin-match_keystore](https://github.com/christopherney/fastlane-plugin-match_keystore) with the following improvements:
+> This was a fork of [christopherney/fastlane-plugin-match_keystore](https://github.com/christopherney/fastlane-plugin-match_keystore) with the following improvements:
 > - Fixed OpenSSL version comparison logic
 > - Ensured keystore directory exists before creation
 > - Replaced Unix shell commands with cross-platform Ruby equivalents
